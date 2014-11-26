@@ -29,7 +29,6 @@ int g_epoll_fd;                /* epoll fd */
 
 struct epoll_event g_events[MAX_EVENTS];
 
-/* function prototype */
 void init_data0(void);            /* initialize data. */
 void init_server0(int svr_port);  /* server socket bind/listen */
 void epoll_init(void);            /* epoll fd create */
@@ -114,27 +113,27 @@ void epoll_init(void)
 
 	printf("[Server] epoll setting complete\n");
 }
-/*------------------------------- end of function epoll_init */
 
+// epoll에 클라이어트 추가
 void epoll_cli_add(int cli_fd)
 {
 
 	struct epoll_event events;
 
-	/* event control set for read event */
 	events.events = EPOLLIN;
 	events.data.fd = cli_fd;
 
+	// 파일 디스크립터를 epoll_fd에 등록
 	if( epoll_ctl(g_epoll_fd, EPOLL_CTL_ADD, cli_fd, &events) < 0 )
 	{
-		printf("[ETEST] Epoll control fails.in epoll_cli_add\n");
+		printf("[Server] epoll_cli_add Fail \n");
 	}
 
 }
 
+// 클라이언트 배열에 추가
 void userpool_add(int cli_fd,char *cli_ip)
 {
-	/* get empty element */
 	register int i;
 
 	for( i = 0 ; i < MAX_CLIENT ; i++ )
@@ -149,6 +148,7 @@ void userpool_add(int cli_fd,char *cli_ip)
 
 }
 
+// 클라이언트 배열에서 삭제
 void userpool_delete(int cli_fd)
 {
 	register int i;
@@ -170,12 +170,12 @@ void userpool_send(char *buffer)
 
 	len = strlen(buffer);
 
+	// 모든 클라이언트 들에게 메세지 발사!
 	for( i = 0 ; i < MAX_CLIENT ; i ++)
 	{
 		if(g_client[i].cli_sockfd != -1 )
 		{
 			len = send(g_client[i].cli_sockfd, buffer, len,0);
-			/* more precise code needed here */
 		}
 	}
 
@@ -184,20 +184,27 @@ void userpool_send(char *buffer)
 
 void client_recv(int event_fd)
 {
-	char r_buffer[1024]; /* for test.  packet size limit 1K */
+	char r_buffer[1024]; // 이건 패킷 사이즈야!
+	char p_msg[1024];
 	int len;
-	/* there need to be more precise code here */ 
-	/* for example , packet check(protocol needed) , real recv size check , etc. */
 
-	/* read from socket */
+	// 소켓으로부터 자료 수신
 	len = recv(event_fd,r_buffer,1024,0);
+	// 실패하면 연결이 끊긴 것이므로 종료
 	if( len < 0 || len == 0 )
 	{
+		printf("[Server] fd = %d Connetion quit \n", event_fd);
+		sprintf(p_msg,"[Server] fd = %d 님이 나가셨습니다.\n", event_fd);
+		userpool_send(p_msg);
 		userpool_delete(event_fd);
-		close(event_fd); /* epoll set fd also deleted automatically by this call as a spec */
+		close(event_fd);
 		return;
 	}
 
+
+	//보낼것들 있으면 메세지 전달a
+	//안 닫아주니까 줄줄셈
+	r_buffer[len] = '\0';
 	userpool_send(r_buffer);
 
 }
@@ -211,6 +218,8 @@ void server_process(void)
 	
 	// 이벤트가 발생한 파일 디스크립터 수를 반환한다.
 	// 감지된 이벤트는 차곡차곡 버퍼에 넣는다.
+	// 3번째 인자가 최대 이벤트 개수인데
+	// 이게 이벤트 배열의 길이를 말하는게 아니라 최대 몇개까지 처리할지 결정하는 것이다.
 	nfds = epoll_wait(g_epoll_fd, g_events, MAX_EVENTS, 100);
 
 	// 이벤트가 없는 경우
@@ -225,6 +234,8 @@ void server_process(void)
 	// 이벤트가 감지된 경우 이벤트 개수만큼 돌린다.
 	for( i = 0 ; i < nfds ; i++ )
 	{
+		printf("g_event[i] = %d\n", g_events[i].data.fd);
+		printf("socket fd = %d\n", g_svr_sockfd);
 		// wait에서 넣은 버퍼를 뒤져서 확인
 		if(g_events[i].data.fd == g_svr_sockfd)
 		{
@@ -236,7 +247,7 @@ void server_process(void)
 			}
 			else
 			{
-				printf("[Server] connet success fd:%d, ip:%s\n",cli_sockfd,inet_ntoa(cli_addr.sin_addr));
+				printf("[Server] connect success fd:%d, ip:%s\n",cli_sockfd,inet_ntoa(cli_addr.sin_addr));
 				userpool_add(cli_sockfd,inet_ntoa(cli_addr.sin_addr));
 				epoll_cli_add(cli_sockfd);
 			}
@@ -252,15 +263,6 @@ void error_handling(char *buf)
 	fputs(buf, stderr);
 	fputc('\n', stderr);
 	exit(1);
-}
-
-/*------------------------------- end of function server_process */
-
-void end_server(int sig)
-{
-	close(g_svr_sockfd); /* close server socket */
-	printf("[ETEST][SHUTDOWN] Server closed by signal %d\n",sig);
-	exit(0);
 }
 
 int main( int argc , char *argv[])
